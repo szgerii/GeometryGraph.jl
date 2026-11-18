@@ -1,5 +1,3 @@
-using StableTasks
-
 mutable struct GLFWData
     name::String
     _window::GLFW.Window
@@ -12,7 +10,7 @@ mutable struct GLFWData
     # For non-blocking backbuffer swap
     _swap_request::Base.Event
     _swap_done::Base.Event
-    _swap_task::Union{Nothing,StableTasks.StableTask{Nothing}}
+    _swap_task::Union{Nothing,Task}
     _closing::Bool
 
     function GLFWData(name::String,inital_width::Int32,inital_height::Int32)
@@ -273,7 +271,7 @@ end
 function start_swap_thread!(w::GLFWData)::Nothing
     w._closing = false
     swap_tid = Base.Threads.nthreads() > 1 ? 2 : 1
-    w._swap_task = ThreadPinning.@spawnat swap_tid _swap_loop(w)
+    w._swap_task = spawn_on_thread(() -> _swap_loop(w), swap_tid)
     errormonitor(w._swap_task)
     return nothing
 end

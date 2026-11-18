@@ -331,7 +331,7 @@ function _compile(loader::PipelineLoader, index)::Nothing
         push!(binaries, isfile(source.spirv_path) ? read(source.spirv_path) : UInt8[])
     end
 
-    as_spirv::Bool = if haskey(ENV, "USE_SPIRV") && ENV["USE_SPIRV"] == "true"
+    as_spirv::Bool = if !haskey(ENV, "USE_SPIRV") || ENV["USE_SPIRV"] == "true"
         all(binary -> !isempty(binary) && can_use_spirv(binary, loader.spirv_extensions), binaries)
     else
         false
