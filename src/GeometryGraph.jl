@@ -155,6 +155,8 @@ function get_element(handle::NodeHandle)::Any
 end
 
 function _add_and_validate!(element::Any,draw_data::Any,parents::Union{Vector{NodeHandle},Nothing},callback::Union{Function,Nothing},use_main_thread::Bool)::NodeHandle
+    @nospecialize
+
     global implicitApp
     app::App = implicitApp::App
 
@@ -181,8 +183,10 @@ function _add_and_validate!(element::Any,draw_data::Any,parents::Union{Vector{No
 
     return handle
 end
+precompile(_add_and_validate!, (Any,Any,Union{Vector{NodeHandle},Nothing},Union{Function,Nothing},Bool))
 
 function add_node!(callback::Function,element::Any;draw_data::Any=nothing,parents::Union{Vector{NodeHandle},Nothing}=nothing,use_main_thread::Bool=false)
+    @nospecialize
     plot()
     return _add_and_validate!(element,draw_data,parents,callback,use_main_thread)
 end
@@ -191,6 +195,7 @@ function add_node!(callback::Function;draw_data::Any=nothing,parents::Union{Vect
     return _add_and_validate!(nothing,draw_data,parents,callback,use_main_thread)
 end
 function add_node!(element::Any;draw_data::Any=nothing,parents::Union{Vector{NodeHandle},Nothing}=nothing,use_main_thread::Bool=false)
+    @nospecialize
     plot()
     return _add_and_validate!(element,draw_data,parents,nothing,use_main_thread)
 end

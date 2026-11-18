@@ -28,6 +28,8 @@ end
 function add!(graph::GeometryPlotGraph, element::Any, render_data::Any,
     parents::Union{Vector{NodeHandle},Nothing}, callback::Union{Function,Nothing}, flags::NodeFlag, element_name::Union{String, Nothing} = nothing)::NodeHandle
 
+    @nospecialize
+
     name::String = 
         element_name === nothing ?
         calc_element_label(graph, edit_node_type_string(element)) :
@@ -169,6 +171,8 @@ function validate!(graph::GeometryPlotGraph, start::NodeHandle, main_thread::Boo
     end
     return nothing
 end
+# for some reason (maybe multithreading?) this gets JIT compiled like 10 times if we don't precompile this manually
+precompile(validate!, (GeometryPlotGraph, NodeHandle, Bool))
 
 function render!(graph::GeometryPlotGraph, renderers::Dict{DataType,Renderer})::Bool
     nodes::Vector{GeometryPlotNode} = graph.nodes

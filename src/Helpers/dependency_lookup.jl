@@ -124,7 +124,8 @@ end
 # macro some_ctor(callback, a=2, b=3, c=4, kw_args...)
 #   @_collect_kw_args(kw_args, (a, 2), (b, 3), (c, 4))
 #   ...
-# end
+# en
+# ! assumes the default in the macro signature and the default passed to @_collect_kw_args are === comparable (e.g. a constant)
 macro _collect_kw_args(kw_args, arg_defaults...)
     gs_found_kw = gensym(:found_kw)
 
@@ -138,7 +139,10 @@ macro _collect_kw_args(kw_args, arg_defaults...)
 
         push!(result.args, quote
             if $gs_found_kw
-                $(esc(kw_args)) = ($(esc(kw_args))..., $(esc(arg)))
+                if $(esc(arg)) !== $(esc(default))
+                    $(esc(kw_args)) = ($(esc(kw_args))..., $(esc(arg)))
+                end
+                $(esc(arg)) = $(esc(default))
             elseif Meta.isexpr($(esc(arg)), :(=))
                 $(esc(kw_args)) = ($(esc(kw_args))..., $(esc(arg)))
                 $(esc(arg)) = $(esc(default))

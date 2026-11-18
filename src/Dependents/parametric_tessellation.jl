@@ -186,7 +186,7 @@ end
 # main thread only
 # meant to be invoked from eval_geometry_node
 # acts a helper for cpu/gpu tessellation
-function handle_param_tess!(param_tess_data::ParamTessData, element::Any, node::GeometryPlotNode, elements::Vector{Any})
+function handle_param_tess!(param_tess_data::ParamTessData, @nospecialize(element::Any), node::GeometryPlotNode, elements::Vector{Any})
     if node.parent_h !== nothing
         for p_h in node.parent_h::Vector{NodeHandle}
             push!(node.converted_parents,convert_callback_entry(elements[p_h]))
@@ -287,6 +287,8 @@ function handle_param_tess!(param_tess_data::ParamTessData, element::Any, node::
     return convert_callback_result(element, eval_result)
 end
 
+precompile(handle_param_tess!, (ParamTessData, Any, GeometryPlotNode, Vector{Any}))
+
 # helper for providing an editor for general parametric tessellation properties
 function edit_param_tess_data!(param_tess_data::ParamTessData,handle::NodeHandle)::Int
     global implicitApp
@@ -322,6 +324,10 @@ on_window_clear() do
         param_tess_data !== nothing && cleanup_gpu_data!(param_tess_data)
     end
 end
+
+# for whatever reason, these alone add 80-90 ms of JIT compile time to the tessellation pipeline
+precompile(Base.setindex!, (Dict{Symbol, NodeHandle}, NodeHandle, Symbol))
+precompile(Base.deepcopy_internal, (Vector{Any}, Base.IdDict{Any,Any}))
 
 # ? ----------------------------
 # ! tessellation CPU readback
@@ -394,6 +400,8 @@ function eval_geometry_node(ts::TessellationSynchronizer, node::GeometryPlotNode
 
     return ts
 end
+
+precompile(eval_geometry_node, (TessellationSynchronizer, GeometryPlotNode, Vector{Any}))
 
 convert_callback_entry(ts::TessellationSynchronizer) = convert_callback_entry(get_element(ts.target_h))
 
