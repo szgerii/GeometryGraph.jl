@@ -117,7 +117,7 @@ function eval_geometry_node(element::IntersectionCalculator, node::GeometryPlotN
     return FindIntersections(element, A, B)
 end
 
-Base.checkbounds(Bool,self::IntersectionCalculator,idx) = return 0 < idx <= self.limit
+Base.checkbounds(::Type{Bool},self::IntersectionCalculator,idx) = return 0 < idx <= self.limit
 function Base.getindex(self::IntersectionCalculator{T}, idx = 1)::Union{T,Nothing} where T
     if checkbounds(Bool, self.intersections, idx)
         return @inbounds self.intersections[idx]
