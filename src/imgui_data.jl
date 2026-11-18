@@ -56,10 +56,8 @@ mutable struct ImGuiData <: ImGuiDNA
 
         add!(dock,GuiDependentsWindow(graph))
         add!(dock,Console())
-        add!(dock,PerformanceWindow())
         #add!(dock,GraphWindow())
         add!(dock,PropertyWindow(graph,openglD._renderers))
-        add!(dock,FrameTime())
 
         push!(widgets,dock)
         push!(widgets,ResetWidget())

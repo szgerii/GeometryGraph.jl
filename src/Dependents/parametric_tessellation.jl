@@ -251,16 +251,8 @@ function handle_param_tess!(param_tess_data::ParamTessData, element::Any, node::
     @assert param_tess_data.current_mode != ParamTessMode.Uninitalized
 
     eval_result = if param_tess_data.current_mode === ParamTessMode.CPU
-        on_main_thread = Threads.threadid() == 1
-        on_main_thread && @time_cpu_begin ParamTess CPU Eval
-        cpu_result = eval_node(element, node.callback, node.converted_parents)
-        on_main_thread && @time_cpu_end ParamTess CPU Eval
-
-        cpu_result
+        eval_node(element, node.callback, node.converted_parents)
     else
-        @time_cpu_begin ParamTess GPU Eval
-
-        @time_gpu_begin ParamTess GPU Eval Compute
         activate(gpu_data.shader)
         bind_ssbo(gpu_data.tess_buffer, 0)
 
@@ -277,8 +269,6 @@ function handle_param_tess!(param_tess_data::ParamTessData, element::Any, node::
 
         num_wg = cld(param_tess_data.sample_count, GPU_TESS_LOCAL_SIZE)
         glDispatchCompute(num_wg, 1, 1)
-        @time_gpu_end ParamTess GPU Eval Compute
-        @time_cpu_end ParamTess GPU Eval
 
         element
     end
@@ -376,21 +366,13 @@ function eval_geometry_node(ts::TessellationSynchronizer, node::GeometryPlotNode
         reserve!(ts.readback_buffer, param_tess_data.sample_count, 0)
     end
 
-    @time_cpu_begin ParamTess GPU Sync
-    @time_gpu_begin ParamTess GPU Sync Copy
     glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT)
     glCopyNamedBufferSubData(gpu_data.tess_buffer._id, ts.readback_buffer._id, 0, 0, size(gpu_data.tess_buffer))
-    @time_gpu_end ParamTess GPU Sync Copy
 
-    @time_cpu_begin ParamTess GPU Sync Fence
     lock(ts.readback_buffer)
     wait(ts.readback_buffer)
-    @time_cpu_end ParamTess GPU Sync Fence
 
-    @time_cpu_begin ParamTess GPU Sync ProcessData
     convert_gpu_result!(target, ts.readback_buffer)
-    @time_cpu_end ParamTess GPU Sync ProcessData
-    @time_cpu_end ParamTess GPU Sync
 
     return ts
 end

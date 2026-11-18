@@ -129,9 +129,7 @@ function draw_opaque!(self::SphereRenderer,cam::Camera,window::GLFWData)::Nothin
     bind_ssbo(self.center_radius_buffer_opaque,0)
     bind_ssbo(self.color_id_buffer_opaque,1)
 
-    @time_gpu_begin Renderer Sphere Opaque
     glDrawArrays(GL_TRIANGLES,0,length(self.center_radius_opaque) * 6)
-    @time_gpu_end Renderer Sphere Opaque
     lock(self.center_radius_buffer_opaque)
 
     glEnable(GL_CULL_FACE)
@@ -144,12 +142,10 @@ function draw_transparent!(self::SphereRenderer,cam::Camera,window::GLFWData)::N
     bind_ssbo(self.center_radius_buffer_transparent,0)
     bind_ssbo(self.color_id_buffer_transparent,1)
 
-    @time_gpu_begin Renderer Sphere Transparent
     activate(self.shader_transparent_front)
     glDrawArrays(GL_TRIANGLES,0,length(self.center_radius_transparent) * 6)
     activate(self.shader_transparent_back)
     glDrawArrays(GL_TRIANGLES,0,length(self.center_radius_transparent) * 6)
-    @time_gpu_end Renderer Sphere Transparent
     lock(self.center_radius_buffer_transparent)
     glEnable(GL_CULL_FACE)
     return nothing

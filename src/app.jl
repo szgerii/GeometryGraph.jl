@@ -31,12 +31,6 @@ mutable struct App <: AppDNA
     _delta_time::Float64
     _vsync_state::Int32
 
-    _frame_alloc_count::Int64
-    _frame_alloc_bytes::Int64
-    _frame_gc_count::Int64
-    _frame_gc_full::Int64
-    _frame_gc_time_ns::Int64
-    
     _transpiler_cfg::ShaderTranspiler.ConfigHandle
     _callback_helpers::Vector{Expr}
 
@@ -78,7 +72,6 @@ mutable struct App <: AppDNA
             glfw,inputs,opengl,imgui,
             nothing,nothing,cam,manipulator,
             graph,false,false,asset_watcher,hovered,delta_time,vsync_state,
-            0,0,0,0,0,
             transpiler_cfg,callback_helpers,
             false,"")
     end
@@ -176,19 +169,8 @@ end
 
 function play!(self::App)
     old_time::Float64 = time()
-    old_gc_num = Base.gc_num()
     while(!get_shouldclose(self._glfw))
-        new_gc_num = Base.gc_num()
-        gc_diff = Base.GC_Diff(new_gc_num, old_gc_num)
-        old_gc_num = new_gc_num
-        self._frame_alloc_count = Base.gc_alloc_count(gc_diff)
-        self._frame_alloc_bytes = gc_diff.allocd
-        self._frame_gc_count = gc_diff.pause
-        self._frame_gc_full = gc_diff.full_sweep
-        self._frame_gc_time_ns = gc_diff.total_time
-
         yield()
-        perf_get_results()
         new_time::Float64 = time()
         delta_time = new_time - old_time
         old_time = new_time
@@ -253,7 +235,6 @@ function update!(self::App, iconified::Bool)
         update!(self._opengl,self._cam,self._scene_change,self._hovered)
         self._scene_change = false
         render!(self._imgui,self)
-        frame_end(self._opengl._profiler)
     end
 end
 
@@ -299,7 +280,6 @@ function init!(self::App)
     setup_callbacks(self)
     setup_event_handles(self._glfw,self._inputs)
     self._imgui = ImGuiData(self)
-    perf_init_gpu()
 
     on_setting_changed("Graphics/Display/Background color") do color
          c = unpack_color(UInt32(trunc(unsigned(color); digits = 32, base = 2)))
@@ -348,7 +328,6 @@ function destroy!(self::App)
         error("No window created, thus, can't destroy!")
     end
 
-    perf_destroy_gpu()
     destroy!(self._imgui)
     destroy!(self._opengl)
     deinit!(self._glfw)

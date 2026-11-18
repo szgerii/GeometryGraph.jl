@@ -505,13 +505,11 @@ function _calc_group_distances!(group::LineGroup, vp::Mat4, wh::Vec2F)::Nothing
 end
 
 function _calc_distances!(self::LineRenderer, vp::Mat4, wh::Vec2F)::Nothing
-    @time_cpu_begin Renderer Line Distances
     Threads.@threads for group in self.pool
         group === nothing && continue
         isempty(group.positions) && continue
         _calc_group_distances!(group, vp, wh)
     end
-    @time_cpu_end Renderer Line Distances
     return nothing
 end
 
@@ -573,9 +571,7 @@ end
 
 function draw_opaque!(self::LineRenderer, ::Camera, ::GLFWData)::Nothing
     _has_drawable(self) || return nothing
-    @time_gpu_begin Renderer Line Opaque
     _draw_groups!(self, self.shaders_opaque)
-    @time_gpu_end Renderer Line Opaque
     return nothing
 end
 
@@ -588,9 +584,7 @@ function draw_behind_opaque!(self::LineRenderer, ::Camera, ::GLFWData)::Nothing
     glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA)
     glColorMaski(1, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE)
 
-    @time_gpu_begin Renderer Line Behind-Opaque
     _draw_groups!(self, self.shaders_behind_opaque)
-    @time_gpu_end Renderer Line Behind-Opaque
 
     glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -601,9 +595,7 @@ end
 function draw_transparent!(self::LineRenderer, ::Camera, ::GLFWData)::Nothing
     _has_drawable(self) || return nothing
 
-    @time_gpu_begin Renderer Line Transparent
     _draw_groups!(self, self.shaders_transparent)
-    @time_gpu_end Renderer Line Transparent
 
     for group_or_nothing in self.pool
         group_or_nothing === nothing && continue

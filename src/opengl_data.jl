@@ -41,9 +41,6 @@ const AABB_MAX_DEFAULT = [ 10.0, 10.0, 10.0]
 
 mutable struct OpenGLData
     _window::GLFWData
-    _profiler::Profiler
-    _passes::@NamedTuple{pre_draw::UInt32, widgets::UInt32, opaque::UInt32, behind_opaque::UInt32, transparent::UInt32, post_process::UInt32}
-    _cpu_stopwatch::UInt32
     _pipeline_loader::PipelineLoader
 
     _renderers::Dict{DataType,Renderer}
@@ -95,18 +92,6 @@ mutable struct OpenGLData
         _backgroundCol = Vec3F(0.73f0,0.73f0,0.73f0)
         glClearColor(_backgroundCol[1], _backgroundCol[2], _backgroundCol[3], 1.0f0)
         glDisable(GL_DITHER);
-
-        profiler = Profiler()
-        passes = (
-            pre_draw      = add_gpu_stopwatch(profiler),
-            widgets       = add_gpu_stopwatch(profiler),
-            opaque        = add_gpu_stopwatch(profiler),
-            behind_opaque = add_gpu_stopwatch(profiler),
-            transparent   = add_gpu_stopwatch(profiler),
-            post_process  = add_gpu_stopwatch(profiler)
-        )
-        cpu_stopwatch = add_cpu_stopwatch(profiler)
-        init!(profiler)
 
         pipeline_loader = PipelineLoader()
         compile_shaders(pipeline_loader)
@@ -200,7 +185,7 @@ mutable struct OpenGLData
 
         max_wg_count, max_shader_storage_block_size = _get_compute_limits()
 
-        self = new(window,profiler,passes,cpu_stopwatch,pipeline_loader,renderers,
+        self = new(window,pipeline_loader,renderers,
             transparent_color_combiner,transparent_id_combiner,highlighter,buffer_clear,grid,
             rgba,id,depth_stencil,depth_stencil_behind_opaque,accum,reveal,
             opaqueFBO,behindOpaqueFBO,transparentFBO,
@@ -384,25 +369,11 @@ function _widgets(self::OpenGLData,cam::Camera, corner_gizmo::Bool = true)
 end
 
 function render_scene!(self::OpenGLData,cam::Camera, corner_gizmo::Bool = true)
-    begin_gpu(self._profiler,self._passes.pre_draw)
     _predraw(self,cam)
-    end_gpu(self._profiler,self._passes.pre_draw)
-    
-    begin_gpu(self._profiler,self._passes.widgets)
     _widgets(self,cam, corner_gizmo)
-    end_gpu(self._profiler,self._passes.widgets)
-    
-    begin_gpu(self._profiler,self._passes.opaque)
     _opaque(self,cam)
-    end_gpu(self._profiler,self._passes.opaque)
-
-    begin_gpu(self._profiler,self._passes.behind_opaque)
     _behind_opaque(self,cam)
-    end_gpu(self._profiler,self._passes.behind_opaque)
-
-    begin_gpu(self._profiler,self._passes.transparent)
     _transparent(self,cam)
-    end_gpu(self._profiler,self._passes.transparent)
 end
 
 function blit_scene!(self::OpenGLData,cam::Camera,hovered::UInt32)
@@ -450,7 +421,6 @@ end
 
 function update!(self::OpenGLData,cam::Camera,scene_change::Bool,hovered::UInt32)
     glCheckErrors(self)
-    begin_cpu(self._profiler, self._cpu_stopwatch)
 
     _ubo_update!(self,cam,hovered)
     #added_all!(self._renderers)
@@ -460,13 +430,9 @@ function update!(self::OpenGLData,cam::Camera,scene_change::Bool,hovered::UInt32
         render_scene!(self,cam)
     end
 
-    begin_gpu(self._profiler,self._passes.post_process)
     blit_scene!(self,cam,hovered)
-    end_gpu(self._profiler,self._passes.post_process)
-    
-    
+
     lock(self._ubo)
-    end_cpu(self._profiler, self._cpu_stopwatch)
 end
 
 function screen_capture(self::OpenGLData, cam::Camera, hovered::UInt32)::Tuple{Vector{Vec3F}, Int32, Int32}

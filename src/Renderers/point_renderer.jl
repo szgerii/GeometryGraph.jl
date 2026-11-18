@@ -291,13 +291,11 @@ end
 
 function draw_opaque!(self::PointRenderer, ::Camera, ::GLFWData)::Nothing
     activate(self.shader)
-    @time_gpu_begin Renderer Point
     for points_data in self.points
         if length(points_data.coords) != 0
             draw(points_data.buffer,GL_POINTS)
         end
     end
-    @time_gpu_end Renderer Point
     lock(self.points[1].buffer[1])
     deactivate(self.shader)
     return nothing

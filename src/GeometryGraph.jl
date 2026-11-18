@@ -16,8 +16,6 @@ import ShaderTranspiler
 include("settings.jl")
 
 include("logger.jl")
-include("profiling.jl")
-include("performance_metrics.jl")
 
 include("asset_watcher.jl")
 
@@ -98,8 +96,6 @@ include("Widgets/options_widget.jl")
 
 include("Widgets/console.jl")
 include("Widgets/named_window.jl")
-include("Widgets/performance_viewer.jl")
-include("Widgets/Windows/frame_time_window.jl")
 include("Widgets/Windows/options_window.jl")
 
 include("opengl_data.jl")
