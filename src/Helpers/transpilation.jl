@@ -22,8 +22,18 @@ mutable struct TranspilationSource
 end
 
 # only meant to support types that convert_argument_gpu can actually produce
-_parse_curly_type(T::DataType)::Union{Expr,Symbol} = 
-    isempty(T.parameters) ? nameof(T) : Expr(:curly, nameof(T), _parse_curly_type.(T.parameters)...)
+function _parse_curly_type(T::DataType)::Union{Expr,Symbol}
+    isempty(T.parameters) && return nameof(T)
+    
+    # we don't do a one-liner here with broadcast since it adds ~80 ms of unnecessary JIT time (per session!)
+    # the recursive _parse_curly_type would be uninferrable and recompiles Base.Compiler._return_type on first call
+    parsed_params = sizehint!(Union{Expr,Symbol}[], length(T.parameters))
+    for param in T.parameters
+        push!(parsed_params, _parse_curly_type(param))
+    end
+
+    return Expr(:curly, nameof(T), parsed_params...)
+end
 _parse_curly_type(::Type{<:SMatrix{N,M,T}}) where {N,M,T} = :(MatNxMT{$N,$M,$(_parse_curly_type(T))})
 
 # transpiles, compiles and links the compute shader for GPU tessellation
@@ -97,9 +107,8 @@ function transpile_tess_shader(src::TranspilationSource, argument_types::Dict{No
     pipe = Pipe()
     glsl_code::Union{String,Nothing} =
         try
-            redirect_stdio(; stdout = pipe, stderr = pipe) do
-                ShaderTranspiler.transpile(translation_unit; run_benchmarks=dbg, cfg)
-            end
+            # helper introduced to speed up JIT compile time of the callback here
+            redirect_stdio(() -> _run_transpile(translation_unit, dbg, cfg); stdout = pipe, stderr = pipe)
         catch ex
             if dbg
                 @log "an unexpected error occured during transpilation, see stderr for details" INFO
@@ -167,6 +176,11 @@ function transpile_tess_shader(src::TranspilationSource, argument_types::Dict{No
 end
 
 precompile(transpile_tess_shader, (TranspilationSource, Dict{NodeHandle,DataType}))
+
+_run_transpile(translation_unit::Expr, run_benchmarks::Bool, cfg::ShaderTranspiler.ConfigHandle)::String =
+    ShaderTranspiler.transpile(translation_unit; run_benchmarks, cfg)
+
+precompile(_run_transpile, (Expr, Bool, ShaderTranspiler.ConfigHandle))
 
 macro callback_helper(fn::Expr)
     @assert MacroTools.isdef(fn) "@callback_helper placed before non-function AST node"

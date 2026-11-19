@@ -1,3 +1,5 @@
+# see curve.jl for why @nospecialize is used where it is
+
 mutable struct ParametricSurface{Range<:AbstractRange}
     values::Matrix{Vec3D}
     uRange::Range
@@ -51,7 +53,8 @@ Base.@propagate_inbounds convert_result!(ps::ParametricSurface,result::Vec3F,u,v
 Base.@propagate_inbounds convert_result!(ps::ParametricSurface,result::Vec3D,u,v) = (ps.values[u,v] = result;ps)
 Base.@propagate_inbounds convert_result!(ps::ParametricSurface,::Nothing,u,v) = (ps.values[u,v] = Vec3DNan;ps)
 
-eval_geometry_node(ps::ParametricSurface, node::GeometryPlotNode, elements::Vector{Any}) = handle_param_tess!(ps.param_tess_data, ps, node, elements)
+eval_geometry_node(@nospecialize(ps::ParametricSurface), node::GeometryPlotNode, elements::Vector{Any}) = handle_param_tess!(ps.param_tess_data, ps, node, elements)
+precompile(eval_geometry_node, (ParametricSurface, GeometryPlotNode, Vector{Any}))
 
 function eval_node(ps::ParametricSurface, callback::Function, arguments::Vector{Any})::Any
     _fill_surface!(ps, callback, arguments...)
@@ -79,7 +82,7 @@ function _fill_surface!(ps::ParametricSurface, callback::F, args::Vararg{Any,N})
     return ps
 end
 
-function render_node(ps::ParametricSurface, pdata::ParametricSurfaceDrawData, renderers::Dict{DataType,Renderer}, id::UInt32)::ParametricSurfaceDrawData
+function render_node(@nospecialize(ps::ParametricSurface), pdata::ParametricSurfaceDrawData, renderers::Dict{DataType,Renderer}, id::UInt32)::ParametricSurfaceDrawData
     triangle_renderer::TriangleRenderer = renderers[TriangleRenderer]
     gpu = ps.param_tess_data.current_mode === ParamTessMode.GPU
     if pdata.handle == 0
@@ -99,6 +102,7 @@ function render_node(ps::ParametricSurface, pdata::ParametricSurfaceDrawData, re
         return pdata
     end
 end
+precompile(render_node, (ParametricSurface, ParametricSurfaceDrawData, Dict{DataType,Renderer},UInt32))
 
 PrimitivesOf(self::ParametricSurface) = PTrianglesOfSurface(self.values)
 
@@ -128,32 +132,52 @@ function wrap_surface_callback(callback_ast::Expr)::Union{Expr,Nothing}
 end
 
 edit_node_enabled(::ParametricSurface)::Bool = true
-edit_node_name(::ParametricSurface)::String = "ParametricSurface" # drop range type params
+edit_node_type_string(::ParametricSurface)::String = "ParametricSurface" # drop range type params
 edit_node(ps::ParametricSurface,data::ParametricSurfaceDrawData,::Dict{DataType,Renderer},handle::NodeHandle)::Tuple{Any,Any,Int} = ps, data, edit_param_tess_data!(ps.param_tess_data,handle)
 
+# same split design as in curve.jl to reduce JIT overhead
+# checking that typeof(uRange) == typeof(vRange) is delayed to the inner ctor's ranges' type unification, otherwise we can't use @nospecialize effectively
+# this is basically what we used to do anyways
+const _DEFAULT_SURFACE_RANGE = range(0.0, 1.0, 50)
+
 function ParametricSurface(callback::Function,
-                           uRange=range(0.0,1.0,50), vRange=range(0.0,1.0,50),
+                           @nospecialize(uRange::AbstractRange=_DEFAULT_SURFACE_RANGE), @nospecialize(vRange::AbstractRange=_DEFAULT_SURFACE_RANGE),
                            parents::Union{Vector{NodeHandle},Nothing}=nothing, color_data::Union{Nothing,String}=nothing;
                            color="g",callback_ast::Union{Expr,Nothing}=nothing,argument_bindings::Union{Dict{Symbol,NodeHandle},Nothing}=nothing,
                            enable_gpu_tessellation::Bool=false)::NodeHandle
     c = isnothing(color_data) ? get_color(color) : get_color(color_data)
+    draw_data = ParametricSurfaceDrawData(UInt32(0), c)
+
+    return _parametric_surface(callback, uRange, vRange, parents, draw_data,
+                               callback_ast, argument_bindings, enable_gpu_tessellation)
+end
+
+function _parametric_surface(callback::Function, uRange::AbstractRange, vRange::AbstractRange, parents::Union{Vector{NodeHandle},Nothing},
+                             draw_data::ParametricSurfaceDrawData, callback_ast::Union{Expr,Nothing}, argument_bindings::Union{Dict{Symbol,NodeHandle},Nothing},
+                             enable_gpu_tessellation::Bool)::NodeHandle
+    @nospecialize
 
     if !enable_gpu_tessellation
         callback_ast = nothing
         argument_bindings = nothing
     elseif callback_ast !== nothing
-        callback_ast = wrap_surface_callback(callback_ast)
+        callback_ast = wrap_surface_callback(callback_ast) # may invalidate callback_ast by returning nothing
     end
     n = length(uRange) * length(vRange)
     param_tess_data = (callback_ast !== nothing && argument_bindings !== nothing) ?
         ParamTessData(callback_ast, argument_bindings, GPU_TESS_SURFACE_NODE_UNIFORMS, n) :
         ParamTessData(n)
 
-    return add_node!(callback, ParametricSurface(uRange, vRange, param_tess_data); draw_data=ParametricSurfaceDrawData(UInt32(0), c), parents=parents,
+    return add_node!(callback, ParametricSurface(uRange, vRange, param_tess_data); draw_data, parents,
                      use_main_thread=(param_tess_data.transpilation_src !== nothing))
 end
+precompile(_parametric_surface, (Function, AbstractRange, AbstractRange, Union{Vector{NodeHandle},Nothing}, ParametricSurfaceDrawData, 
+                                 Union{Expr,Nothing}, Union{Dict{Symbol,NodeHandle},Nothing}, Bool))
 
-macro ParametricSurface(callback::Expr,uRange,vRange,args...)
+macro ParametricSurface(callback::Expr,uRange=_DEFAULT_SURFACE_RANGE,vRange=_DEFAULT_SURFACE_RANGE,args...)
+    @nospecialize
+
+    @_collect_kw_args(args, (uRange, _DEFAULT_SURFACE_RANGE), (vRange, _DEFAULT_SURFACE_RANGE))
     (positional_args, kw_args) = _parse_macro_arguments((:color_data,),(:color, :enable_gpu_tessellation), args...)
     callback = _validate_callback_expr(callback, 2)
     return _create_ctor_wrapper(callback, __module__, GeometryGraph.ParametricSurface,

@@ -1,3 +1,6 @@
+# @nospecialize stops Julia from generating a separate method for each range type, though it forces calls relying on the curve to be dynamic dispatches
+# this is fine for code that runs either only at init, or once per validation, as it adds negligible overhead to the workload, while stripping seconds of JIT compile time on first run
+
 mutable struct ParametricCurve{R <: AbstractRange{Float64}}
     range::R
     values::Vector{Vec3D}
@@ -7,7 +10,7 @@ mutable struct ParametricCurve{R <: AbstractRange{Float64}}
         new{R}(range, Vector{Vec3D}(undef, length(range)), param_tess_data)
     end
 end
-edit_node_name(::ParametricCurve)::String = "ParametricCurve"
+edit_node_type_string(::ParametricCurve)::String = "ParametricCurve"
 
 struct ParametricCurveDrawData
     handle::LineHandle
@@ -66,7 +69,8 @@ convert_result!(pc::ParametricCurve,v::Vec2D,index)              = pc.values[ind
 convert_result!(pc::ParametricCurve,v::Vec2F,index)              = pc.values[index] = Vec3D(v[1],v[2],0.0)
 convert_result!(pc::ParametricCurve,v::Nothing,index)            = pc.values[index] = Vec3DNan
 
-eval_geometry_node(element::ParametricCurve, node::GeometryPlotNode, elements::Vector{Any}) = handle_param_tess!(element.param_tess_data, element, node, elements)
+eval_geometry_node(@nospecialize(element::ParametricCurve), node::GeometryPlotNode, elements::Vector{Any}) = handle_param_tess!(element.param_tess_data, element, node, elements)
+precompile(eval_geometry_node, (ParametricCurve, GeometryPlotNode, Vector{Any}))
 
 function eval_node(element::ParametricCurve, callback::Function, arguments::Vector{Any})::Any
     _fill_curve!(element, callback, arguments...)
@@ -91,7 +95,7 @@ function convert_gpu_result!(element::ParametricCurve,tess_buffer::MappedBuffer{
     end
 end
 
-function render_node(pc::ParametricCurve, data::ParametricCurveDrawData, renderers::Dict{DataType,Renderer}, id::UInt32)::ParametricCurveDrawData
+function render_node(@nospecialize(pc::ParametricCurve), data::ParametricCurveDrawData, renderers::Dict{DataType,Renderer}, id::UInt32)::ParametricCurveDrawData
     line_renderer::LineRenderer = renderers[LineRenderer]
     if is_null(data.handle)
         handle = add!(line_renderer, pc.values, data.colors, [id], data.style, data.size)
@@ -101,6 +105,7 @@ function render_node(pc::ParametricCurve, data::ParametricCurveDrawData, rendere
         return data
     end
 end
+precompile(render_node, (ParametricCurve, ParametricCurveDrawData, Dict{DataType,Renderer}, UInt32))
 
 # ? For Intersectable ParametricCurves.
 struct PSegmentsOfCurve <: PrimitivesOf{PSegment}
@@ -152,7 +157,11 @@ end
 
 edit_node(pc::ParametricCurve,data::ParametricCurveDrawData,::Dict{DataType,Renderer},handle::NodeHandle)::Tuple{Any,Any,Int} = pc, data, edit_param_tess_data!(pc.param_tess_data,handle)
 
-function ParametricCurve(callback::Function, range::AbstractRange{Float64},
+# the idea here is to have the keyword layout and any generic argument (like size) be resolved in a thin wrapper layer
+# this way it doesn't matter that Julia compiles this per call "layout" (e.g. which keywords are specified, what types they have, etc.) since it's cheap to do so
+# the heavy-to-compile logic lives in _parametric_curve, whose arguments are @nospecialized, so that it can get precompiled and not invalidated later
+# since this is per-geometry-init functionality, the (tiny) cost of dynamic dispatch we add to _parametric_curve doesn't affect any hot paths and we save ~500 ms in JIT time per call "layout" 
+function ParametricCurve(callback::Function, @nospecialize(range::AbstractRange{Float64}),
                 parents::Union{Vector{NodeHandle},Nothing}=nothing, color_style::Union{Nothing,String}=nothing;
                 color="c", style="-", size=5.0f0, callback_ast::Union{Expr,Nothing}=nothing,
                 argument_bindings::Union{Dict{Symbol,NodeHandle},Nothing}=nothing,
@@ -160,19 +169,30 @@ function ParametricCurve(callback::Function, range::AbstractRange{Float64},
     (c, s) = parse_line_colors_style(color_style, color, style)
     draw_data = ParametricCurveDrawData(LineHandle(), c, s, Float32(size))
     
+    return _parametric_curve(callback, range, parents, draw_data, callback_ast, argument_bindings, enable_gpu_tessellation)
+end
+
+function _parametric_curve(callback::Function, range::AbstractRange{Float64},
+                           parents::Union{Vector{NodeHandle},Nothing},
+                           draw_data::ParametricCurveDrawData,
+                           callback_ast::Union{Expr,Nothing}, argument_bindings::Union{Dict{Symbol,NodeHandle},Nothing},
+                           enable_gpu_tessellation::Bool)::NodeHandle
+    @nospecialize # applies to all arguments
+
     if !enable_gpu_tessellation
         callback_ast = nothing
         argument_bindings = nothing
     elseif callback_ast !== nothing
         callback_ast = wrap_curve_callback(callback_ast) # may return nothing and invalidate callback_ast
     end
+
     param_tess_data = if callback_ast !== nothing && argument_bindings !== nothing
         ParamTessData(callback_ast, argument_bindings, GPU_TESS_CURVE_NODE_UNIFORMS, length(range))
     else
         ParamTessData(length(range))
     end
 
-    curve_h = add_node!(callback, ParametricCurve(range,param_tess_data); draw_data=draw_data, parents=parents,
+    curve_h = add_node!(callback, ParametricCurve(range,param_tess_data); draw_data, parents,
                         use_main_thread=(param_tess_data.transpilation_src !== nothing))
 
     # ugly temporary workaround hack until GPU tessellation is connected to the line renderer (rendering always requires syncing)
@@ -185,8 +205,13 @@ function ParametricCurve(callback::Function, range::AbstractRange{Float64},
 
     return curve_h
 end
+precompile(_parametric_curve, (Function, AbstractRange{Float64}, Union{Vector{NodeHandle},Nothing}, ParametricCurveDrawData,
+                               Union{Expr,Nothing}, Union{Dict{Symbol,NodeHandle},Nothing}, Bool))
 
 macro ParametricCurve(callback::Expr,range,args...)
+    # TODO: if this works, apply in other macro ctors as well. for now only curves/surfaces have it since thats what im measuring
+    @nospecialize
+
     (positional_args, kw_args) = _parse_macro_arguments((:color_style,),(:color, :style, :size, :enable_gpu_tessellation), args...)
     callback = _validate_callback_expr(callback, 1)
     return _create_ctor_wrapper(callback, __module__, GeometryGraph.ParametricCurve,
