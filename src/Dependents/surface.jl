@@ -175,6 +175,8 @@ precompile(_parametric_surface, (Function, AbstractRange, AbstractRange, Union{V
                                  Union{Expr,Nothing}, Union{Dict{Symbol,NodeHandle},Nothing}, Bool))
 
 macro ParametricSurface(callback::Expr,uRange=_DEFAULT_SURFACE_RANGE,vRange=_DEFAULT_SURFACE_RANGE,args...)
+    @nospecialize
+
     @_collect_kw_args(args, (uRange, _DEFAULT_SURFACE_RANGE), (vRange, _DEFAULT_SURFACE_RANGE))
     (positional_args, kw_args) = _parse_macro_arguments((:color_data,),(:color, :enable_gpu_tessellation), args...)
     callback = _validate_callback_expr(callback, 2)

@@ -209,6 +209,9 @@ precompile(_parametric_curve, (Function, AbstractRange{Float64}, Union{Vector{No
                                Union{Expr,Nothing}, Union{Dict{Symbol,NodeHandle},Nothing}, Bool))
 
 macro ParametricCurve(callback::Expr,range,args...)
+    # TODO: if this works, apply in other macro ctors as well. for now only curves/surfaces have it since thats what im measuring
+    @nospecialize
+
     (positional_args, kw_args) = _parse_macro_arguments((:color_style,),(:color, :style, :size, :enable_gpu_tessellation), args...)
     callback = _validate_callback_expr(callback, 1)
     return _create_ctor_wrapper(callback, __module__, GeometryGraph.ParametricCurve,

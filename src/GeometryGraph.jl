@@ -239,6 +239,10 @@ using PrecompileTools: @setup_workload, @compile_workload
     @compile_workload begin
         app = App()
         global implicitApp = app
+
+        macroexpand(GeometryGraph, :(@ParametricCurve(t -> p + Vec3F(0,0,0), 0:0.1:2pi, enable_gpu_tessellation=true)))
+        macroexpand(GeometryGraph, :(@ParametricSurface((u,v) -> p + Vec3F(0,0,0), 0:0.1:2pi, 0:0.1:2pi, enable_gpu_tessellation=true)))
+
         try
             init!(app)
             t, gc = time(), Base.gc_num()

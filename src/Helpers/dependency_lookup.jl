@@ -46,6 +46,8 @@ function _parse_macro_kw_args(kw_names::Vector{Symbol}, kw_args...)
 end
 
 function _parse_macro_arguments(pos_names, kw_names, args...)::Tuple{Vector{Any},Dict{Symbol,Any}}
+    @nospecialize
+
     pos_args = Vector{Any}()
     kw_args  = Dict{Symbol,Any}()
     flat_args = Any[]
@@ -493,8 +495,20 @@ end
 """Helper for the macro ctor wrapped callbacks, which helps keep callback arguments type stable"""
 _callback_arg(args::Tuple, ::Val{I}) where {I} = args[I]
 
+# lifted into a separate function since @warn's expansion adds heavily to the expansion time of macro ctors through _create_ctor_wrapper
+# precompilation is not needed, it's enough to JIT this once we actually hit the warning, if ever
+function _warn_missing_symbol(sym::Symbol)::Nothing
+    @warn("Failed to find symbol '$sym' in the defining context of a macro constructor. " *
+          "This could be because of an internal deficiency of the macro system, but it could be a user-side error as well. " *
+          "Execution will continue, as things may work without any problems, especially if the symbol does not refer to a dependent. " *
+          "Use the constructors with explicit dependency lists if experiencing any errors or incorrect behavior, and please open an issue in the GeometryGraph GitHub repo.",
+          maxlog=1, _id=sym)
+    nothing
+end
+
 """Helper for generating the code returned by macro ctors"""
-function _create_ctor_wrapper(callback, mod::Module, base_ctor, ctor_optional_args::Vector{Any}, ctor_kw_args::Dict{Symbol,Any}, get_ctor_args = tuple, pass_gpu_tess_args::Bool = false)
+function _create_ctor_wrapper(callback, mod::Module, @nospecialize(base_ctor), ctor_optional_args::Vector{Any}, ctor_kw_args::Dict{Symbol,Any},
+                              @nospecialize(get_ctor_args = tuple), pass_gpu_tess_args::Bool = false)
     free_syms = _collect_free_vars(callback, mod)
 
     body = callback.args[2]
@@ -523,7 +537,7 @@ function _create_ctor_wrapper(callback, mod::Module, base_ctor, ctor_optional_ar
             $(_callback_arg)($gs_callback_args, $sym_gs) :
             ($(esc(:(@isdefined($sym)))) ?
                 $(esc(sym)) :
-                @warn "Failed to find symbol '" * String($(QuoteNode(sym))) * "' in the defining context of a macro constructor. This could be because of an internal deficiency of the macro system, but it could be a user-side error as well. Execution will continue, as things may work without any problems, especially if the symbol does not refer to a dependent. Use the constructors with explicit dependency lists if experiencing any errors, or incorrect behavior, and please open an issue in the GeometryGraph GitHub repo."
+                $(_warn_missing_symbol)($(QuoteNode(sym)))
             )
         )
         push!(inner_let_bindings.args, Expr(:(=), esc(sym), inner_let_rhs))
