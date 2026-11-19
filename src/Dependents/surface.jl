@@ -132,7 +132,7 @@ function wrap_surface_callback(callback_ast::Expr)::Union{Expr,Nothing}
 end
 
 edit_node_enabled(::ParametricSurface)::Bool = true
-edit_node_name(::ParametricSurface)::String = "ParametricSurface" # drop range type params
+edit_node_type_string(::ParametricSurface)::String = "ParametricSurface" # drop range type params
 edit_node(ps::ParametricSurface,data::ParametricSurfaceDrawData,::Dict{DataType,Renderer},handle::NodeHandle)::Tuple{Any,Any,Int} = ps, data, edit_param_tess_data!(ps.param_tess_data,handle)
 
 # same split design as in curve.jl to reduce JIT overhead

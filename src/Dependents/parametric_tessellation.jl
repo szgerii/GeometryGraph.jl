@@ -337,6 +337,7 @@ mutable struct TessellationSynchronizer
     target_h::NodeHandle # the node to sync, must be the parent of the synchronizer
     readback_buffer::Union{MappedBuffer{Vec4},Nothing}
 end
+edit_node_enabled(::TessellationSynchronizer)::Bool = false
 
 const _tess_synchronizer_cache::Dict{NodeHandle, NodeHandle} = Dict{NodeHandle, NodeHandle}()
 on_window_clear() do
